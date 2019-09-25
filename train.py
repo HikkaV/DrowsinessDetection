@@ -8,15 +8,15 @@ from math import ceil
 from skimage import transform
 from skopt import forest_minimize
 from tqdm import tqdm
-
 from utils.settings import *
-from f import resnet, mobnet
+from nets_custom import resnet, mobnet
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import pickle
 from utils.helpers import plot_pred
-from preprocess import Process
+from utils.helpers import Process
+from utils.helpers import l1_loss
 
 
 class Train:
@@ -56,7 +56,7 @@ class Train:
     def rescale_landmarks(df):
         overall_list = []
         for i in df.iterrows():
-            overall_list.append(Train.resize_landmarks(i[1][1], i[1][2], dim[0], dim[1], i[1][3:]))
+            overall_list.append(Train.resize_landmarks(i[1][2], i[1][1], dim[0], dim[1], i[1][3:]))
         return overall_list
 
     def read_df(self):
@@ -64,8 +64,8 @@ class Train:
         train_df = pd.read_csv(path_to_train)
         test_df = pd.read_csv(path_to_valid)
         test_df['im_name'] = test_df['im_name'].apply(lambda x: abs_path + x)
-        train_df['im_name'] = train_df['im_name'].apply(lambda x: abs_path + x)
-        train_df[train_df.columns[3:]] = Train.rescale_landmarks(df=train_df)
+        # train_df['im_name'] = train_df['im_name'].apply(lambda x: abs_path + x)
+        # train_df[train_df.columns[3:]] = Train.rescale_landmarks(df=train_df)
         train_df[train_df.columns[3:]] = Train.scale(train_df)
         train_df, valid_df = train_test_split(train_df, random_state=random_state)
         columns = list(train_df.columns[3:])
@@ -95,11 +95,11 @@ class Train:
         self.epochs = epochs
         if res_net:
             additional_str = 'resnet'
-            dn = resnet.ResNet_Custom(loss=loss, dropout=dropout,
+            dn = resnet.ResNet_Custom(dropout=dropout,
                                       eta=eta, reg=l2, weights=weights, classes=classes, dim=(dim[0], dim[1], 3))
         else:
             additional_str = 'mobnet'
-            dn = mobnet.Mobnet_Custom(loss=loss, dropout=dropout,
+            dn = mobnet.Mobnet_Custom(dropout=dropout,
                                       eta=eta, reg=l2, weights=weights, classes=classes, dim=(dim[0], dim[1], 3),
                                       dropout_global=dropout_global)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10)
@@ -116,18 +116,18 @@ class Train:
                                         )
         overall_list = []
         for i in range(epochs):
-            overall_list.append((train_batch, valid_batch, dropout, dropout_global, eta, loss, self.id_,))
+            overall_list.append((train_batch, valid_batch, dropout, dropout_global, eta, self.id_, l2))
 
         df = pd.DataFrame(data=overall_list, columns=['train_batch', 'valid_batch',
                                                       'dropout', 'dropout_global', 'eta',
-                                                      'loss'  'experiment_id',
+                                                      'experiment_id',
                                                       'l2'])
         loss_ = hist.history['val_loss'][len(hist.history['val_loss']) - 1]
         self.model.save('models/model{}~{}~loss{}.h5'.format(self.id_, additional_str, loss_))
         for i in hist.history.keys():
             df[i] = hist.history[i]
         self.history_df = self.history_df.append(df)
-
+        del self.model
         return loss_
 
     @staticmethod
@@ -145,54 +145,26 @@ class Train:
         self.history_df.to_csv(path_to_hist, index=False)
         print('Best params are : {}'.format(params))
 
-    def predict_normal(self, path_to_model, path_to_img, path_to_scaler='scaler.pickle', ifsave=True, name='slide.png',
-                       thr=False):
-        if not isinstance(path_to_model, str):
-            model = path_to_model
-        else:
-            model = keras.models.load_model(path_to_model)
-
-        np_image = cv2.imread(path_to_img)
-
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
-        np_image_ = np.array(np_image).astype('float32') / 255
-        np_image_ = transform.resize(np_image_, (1, dim[0], dim[1], 3))
-
-        tmp = model.predict(np_image_)
-        output = self.detransform(tmp, path_to_scaler).flatten()
-        output = Train.resize_landmarks(dim[0],dim[1],np_image.shape[0], np_image.shape[1], output)
-
-        if thr:
-            plot_pred(np_image, output, ifsave, name)
-
-        return list(map(int, output))
-
     def predict(self, path_to_model, path_to_img, path_to_scaler='scaler.pickle', ifsave=True, name='slide.png',
                 thr=False):
         if not isinstance(path_to_model, str):
             model = path_to_model
         else:
-            model = keras.models.load_model(path_to_model)
-        np_image = cv2.imread(path_to_img)
-
-        np_image__ = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
-        np_image, tup_ = self.preproc.crop_only_image(np_image__)
-        cv2.imwrite('smth.png', np.array(np_image))
+            model = keras.models.load_model(path_to_model, custom_objects={'l1_loss': l1_loss})
+        origin = cv2.imread(path_to_img)
+        origin = cv2.cvtColor(np.array(origin), cv2.COLOR_RGB2BGR)
+        np_image, tup = self.preproc.crop_only_image(origin)
+        width = np_image.width
+        height = np_image.height
+        np_image.save('img.jpg')
         np_image_ = np.array(np_image).astype('float32') / 255
         np_image_ = transform.resize(np_image_, (1, dim[0], dim[1], 3))
-
         tmp = model.predict(np_image_)
         output = self.detransform(tmp, path_to_scaler).flatten()
-        output = Train.resize_landmarks(dim[0], dim[1], np_image.width, np_image.height, output)
-        out = []
-        x = [output[i] for i in range(len(output)) if i % 2 == 0]
-        y = [output[i] for i in range(len(output)) if i % 2 != 0]
-        for i in range(len(x)):
-            out.append(x[i] + tup_[0])
-            out.append(y[i] + tup_[1])
-        output = out
+        output = Train.resize_landmarks(128, 128, width, height, output)
+        output = [i + tup[0] if z % 2 == 0 else i + tup[1] for z, i in enumerate(output)]
         if thr:
-            plot_pred(np_image__, output, ifsave, name)
+            plot_pred(origin, output, ifsave, name)
         return list(map(int, output))
 
     @staticmethod
@@ -219,7 +191,7 @@ class Train:
 
         overall_list = []
         for i in tqdm(im_names):
-            output = self.predict_normal(model, abs_path1 + i, thr=thr)
+            output = self.predict(model, abs_path1 + i, thr=thr)
             print(len(output))
             overall_list.append((i, *output))
             print(len(list((i, *output))))

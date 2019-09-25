@@ -2,85 +2,57 @@ from keras import backend as K
 from PIL import Image
 import cv2
 import numpy as np
-from utils.settings import cfg_darnket, weights_darknet
 from matplotlib import pyplot as plt
+import cv2
+from PIL import Image
+import pandas as pd
 
 
-def plot_pred(img_, output, ifsave=True, name='slide.png'):
-    fig, ax = plt.subplots(figsize=(18, 20))
-    imgplot = ax.imshow(img_)
-    x = []
-    y = []
-    for z, i in enumerate(output):
-        if z % 2 == 0:
-            x.append(i)
-        else:
-            y.append(i)
-    output = list(zip(x, y))
-    for i in output:
-        ax.scatter(int(i[0]), int(i[1]), 50)
-
-    plt.title('Prediction for epoch{0}'.format(name.split('epoch')[1].replace('.png', '')))
-    plt.show()
-    if ifsave:
-        fig.savefig(name)
-
-
-class ImagePreprocessor:
-    def __init__(self, cfg=cfg_darnket, weights=weights_darknet):
-        self.cfg = cfg
-        self.weights = weights
-        self.net = cv2.dnn.readNetFromDarknet(self.cfg, self.weights)
+class Process:
+    def __init__(self, cfg, weights, path_to_save_img=None, path_to_df=None):
+        self.net = cv2.dnn.readNetFromDarknet(cfg, weights)
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+        self.path_to_save = path_to_save_img
+        self.df = pd.read_csv(path_to_df) if path_to_df else None
 
-    def resize(self, image, landmarks, width, height):
+    # def unlist_lands(self, landmarks):
+    #     lands = []
+    #     for i in landmarks:
+    #         lands.append(i[0])
+    #         lands.append(i[1])
+    #     return lands
+
+    def resize_image_landmarks(self, image, new_height, new_width, landmarks):
         cur_height = image.height
         cur_width = image.width
-        image = image.resize((height, width))
+        image = image.resize((new_height, new_width))
         for i in range(len(landmarks)):
-            landmarks[i] = [
-                width / cur_width * landmarks[i][0],
-                height / cur_height * landmarks[i][1]
-            ]
+            landmarks[i] = (
+                new_width / cur_width * landmarks[i][0],
+                new_height / cur_height * landmarks[i][1]
+            )
         return image, landmarks
 
-    def crop_face(self, image, landmarks):
-        param = 60
-        blob = cv2.dnn.blobFromImage(image,
-                                     1 / 255, (416, 416), [0, 0, 0],
-                                     1,
-                                     crop=False)
+    def crop_only_image(self, image):
+        param = 20
+        blob = cv2.dnn.blobFromImage(np.array(image), 1 / 255, (416, 416),
+                                     [0, 0, 0], 1, crop=False)
         self.net.setInput(blob)
-        outs = self.net.forward(ImagePreprocessor.get_outputs_names(self.net))
-        faces, _, __ = ImagePreprocessor.post_process(image, outs, 0.7,
-                                                      0.8)
-        crop_faces = [(faces[i][0] - param, faces[i][1] - param,
-                       faces[i][2] + faces[i][0] + param,
-                       faces[i][3] + faces[i][1] + param)
-                      for i in range(len(faces))]
+        outs = self.net.forward(self.get_outputs_names(self.net))
+        faces, _, __ = self.post_process(np.array(image), outs, 0.7, 0.8)
+        faces = faces[0] if faces[0][0] > faces[0][1] else faces[1]
+        crop_faces = [faces[0] - param, faces[1] - param, faces[2] + faces[0] + param, faces[3] + faces[1] + param]
+        img = Image.fromarray(image).crop(crop_faces)
+        return img, (crop_faces[0], crop_faces[1])
 
-        img = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    def get_outputs_names(self, net):
+        layers_names = net.getLayerNames()
+        return [layers_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-        crop_faces = [(faces[i][0] - param, faces[i][1] - param,
-                       faces[i][2] + faces[i][0] + param,
-                       faces[i][3] + faces[i][1] + param)
-                      for i in range(len(faces))]
-        img = Image.fromarray(np.asarray(img)).crop(
-            crop_faces[0]).convert('RGB')
-        landmarks = [(i[0] - crop_faces[0][0], i[1] - crop_faces[0][1])
-                     for i in landmarks]
-
-        return img, landmarks
-
-    @staticmethod
-    def post_process(image, outs, conf_threshold, nms_threshold):
-        image_height = image.shape[0]
-        image_width = image.shape[1]
-
-        # Scan through all the bounding boxes output from the network and keep only
-        # the ones with high confidence scores. Assign the box's class label as the
-        # class with the highest score.
+    def post_process(self, frame, outs, conf_threshold, nms_threshold):
+        frame_height = frame.shape[0]
+        frame_width = frame.shape[1]
         confidences = []
         boxes = []
 
@@ -95,10 +67,10 @@ class ImagePreprocessor:
                     class_id = np.argmax(scores)
                     confidence = scores[class_id]
                     if confidence > conf_threshold:
-                        center_x = int(detection[0] * image_width)
-                        center_y = int(detection[1] * image_height)
-                        width = int(detection[2] * image_width)
-                        height = int(detection[3] * image_height)
+                        center_x = int(detection[0] * frame_width)
+                        center_y = int(detection[1] * frame_height)
+                        width = int(detection[2] * frame_width)
+                        height = int(detection[3] * frame_height)
                         left = int(center_x - width / 2)
                         top = int(center_y - height / 2)
                         confidences.append(float(confidence))
@@ -119,7 +91,26 @@ class ImagePreprocessor:
 
         return people_boxes, class_ids, indices
 
-    @staticmethod
-    def get_outputs_names(net):
-        layers_names = net.getLayerNames()
-        return [layers_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+def l1_loss(y_true, y_pred):
+    return K.sum(K.abs(y_true-y_pred))
+
+def plot_pred(img_, output, ifsave=True, name='slide.png'):
+    fig, ax = plt.subplots(figsize=(18, 20))
+    imgplot = ax.imshow(img_)
+    print(len(output))
+    x = []
+    y = []
+    for z, i in enumerate(output):
+        if z % 2 == 0:
+            x.append(i)
+        else:
+            y.append(i)
+    output = list(zip(x, y))
+    for i in output:
+        ax.scatter(int(i[0]), int(i[1]), 50)
+
+    plt.title('Prediction')
+    plt.show()
+    if ifsave:
+        fig.savefig(name)

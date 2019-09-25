@@ -4,9 +4,9 @@ from keras.layers import SeparableConv2D, BatchNormalization, Dense, Dropout, Gl
     Flatten
 from keras.optimizers import Adam
 from keras.regularizers import l2
-from f import net_factory
+from nets_custom import net_factory
 
-
+from utils.helpers import l1_loss
 
 class Mobnet_Custom(net_factory.NetworkFactory):
 
@@ -16,7 +16,6 @@ class Mobnet_Custom(net_factory.NetworkFactory):
         self.w = kwargs['weights']
         self.dropout_global = kwargs['dropout_global']
         self.dropout = kwargs['dropout']
-        self.loss = kwargs['loss']
         self.eta = kwargs['eta']
         self.dim = kwargs['dim']
         self.regulizer = kwargs['reg']
@@ -37,7 +36,7 @@ class Mobnet_Custom(net_factory.NetworkFactory):
         model = Model(inputs=inputs, outputs=z)
 
         adam = Adam(lr=self.eta)
-        model.compile(optimizer=adam, loss=self.loss, metrics=['mse'] )
+        model.compile(optimizer=adam, loss=l1_loss, metrics=['mse', 'mae'] )
 
         print(model.summary())
 

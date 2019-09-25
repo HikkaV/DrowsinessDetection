@@ -1,7 +1,7 @@
 import pickle
 from math import ceil
 import  numpy as np
-import keras
+from keras import backend as K, Input
 from keras import Sequential
 from keras.layers import Dense, BatchNormalization, Dropout
 from keras.optimizers import Adam
@@ -14,17 +14,17 @@ import pandas as pd
 from train import Train
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import r2_score
-from f import resnet
+from nets_custom import resnet
 
 tr = Train()
 abs_path = '/home/hikkav/hack/data/eye_tracking/train_images/'
 
-model = keras.models.load_model('models/model819~resnet~loss0.0715680956130936.h5')
+# model = keras.models.load_model('models/model819~resnet~loss0.0715680956130936.h5')
 
 
 def create_model(dim):
-    model = Sequential()
-
+    # Input(shape=)
+    K.concatenate([Dense(2000,activation='relu')])
     model.add(Dense(2000, input_dim=dim, activation="relu"))
     model.add(BatchNormalization())
 

@@ -4,8 +4,8 @@ from keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from keras.optimizers import Adam
 from keras.regularizers import l2
 
-from f import net_factory
-
+from nets_custom import net_factory
+from utils.helpers import l1_loss
 
 class ResNet_Custom(net_factory.NetworkFactory):
 
@@ -14,7 +14,6 @@ class ResNet_Custom(net_factory.NetworkFactory):
         self.classes = kwargs['classes']
         self.w = kwargs['weights']
         self.dropout = kwargs['dropout']
-        self.loss = kwargs['loss']
         self.eta = kwargs['eta']
         self.dim = kwargs['dim']
         self.regulizer =kwargs['reg']
@@ -27,6 +26,7 @@ class ResNet_Custom(net_factory.NetworkFactory):
                           input_shape=self.dim)
         x = resnet(inputs)
         x = GlobalAveragePooling2D()(x)
+
         x = Dense(256, activation='relu', kernel_regularizer=l2(self.regulizer))(x)
         x = Dropout(self.dropout)(x)
         z = Dense(self.classes, activation='tanh')(x)
@@ -34,7 +34,7 @@ class ResNet_Custom(net_factory.NetworkFactory):
         model = Model(inputs=inputs, outputs=z)
 
         adam = Adam(lr=self.eta)
-        model.compile(optimizer=adam, loss=self.loss, metrics=['mse'])
+        model.compile(optimizer=adam, loss=l1_loss, metrics=['mse','mae'])
 
         print(model.summary())
 
