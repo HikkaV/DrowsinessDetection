@@ -1,4 +1,7 @@
 # DrowsinessDetection
+
+<html>
+ </head>&nbsp;</head>
 <table width="300px">
 <tr>
 <th colspan="3"><b>Currently supported stuff</b></th>
@@ -29,3 +32,4 @@
 <td width="10px"><font color="red" size="30">Not started</font></td>
 </tr>
 </table>
+</html>
