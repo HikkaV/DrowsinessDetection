@@ -11,7 +11,7 @@
 </tr>
 <tr>
 <th>Linear regression for padding</th>
-<td width="10px"><font color="yellow" size="30">In progress</font></td>
+<td width="10px"><font color="yellow" size="30">```diff - In progress```</font></td>
 </tr>
 <th>Custom data generator</th>
 <td width="10px"><font color="yellow" size="30">In progress</font></td>
