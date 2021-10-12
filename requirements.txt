@@ -26,4 +26,4 @@ Theano==1.0.4
 Werkzeug==0.15.6
 wrapt==1.11.2
 opencv-contrib-python==4.0.0.21
-opencv-python==4.0.0.21
+opencv-python==4.1.1.26
